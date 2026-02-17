@@ -1,76 +1,136 @@
 package com.geheimnis.metodosCriptografia;
 
-import javax.crypto.*;
-import javax.crypto.spec.*;
-import java.security.*;
-import java.util.Arrays;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.security.SecureRandom;
+import java.security.spec.KeySpec;
 
-import com.geheimnis.abstracts.Criptografia;
+import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
 
-public class AESGCM implements Criptografia {
+//salva num arquivo .cript ou descriptografa pra txt
+//1- IV
+//2- saltos
+//3- texto cifrado
+public class AESGCM{
 
-    private static final int SALT_SIZE = 16;
-    private static final int IV_SIZE = 12;
-    private static final int KEY_SIZE = 256;
-    private static final int ITERATIONS = 600_000;
+    private static final int TAMANHO_CHAVES_GERADAS = 128;
+    private static final int TAMANHO_IV = 12;
+    private static final int TAMANHO_SALTOS = 16;
+    private static final int BUFFER = 1024 * 10; // 10 MB
+    private static final int TAMANHO_TAG = 128;
 
-    @Override
-    public byte[] encrypt(byte[] data, String senha) throws Exception {
+    public void encrypt(File arquivo, String senha) throws Exception {
+        //declarações necessárias
+        byte[] buffer_leitura = new byte[BUFFER];
+        FileInputStream Fin = new FileInputStream(arquivo);
+        FileOutputStream Fout = new FileOutputStream(new File(arquivo.getAbsolutePath()+".cripto"), true);
+        //1- gera saltos aleatorios
+        byte[] saltos = gerarSaltos();
+        //2- gera uma senha mais forte com saltos aleatorios
+        SecretKey key = gerarKey(senha, saltos);
+        //3- gera um vetor de inicialização aleatorio
+        byte[] IV = gerarIVAleatorio();
+        //4- cria o Cipher
+        Cipher cipher = getCipherConfigurado(IV, key, Cipher.ENCRYPT_MODE);
+        //5- grava os dados do IV
+        Fout.write(IV);
+        //6- grava os dados dos saltos
+        Fout.write(saltos);
+        //inicia o loop de encriptação
+        int lidos;
+        while ((lidos = Fin.read(buffer_leitura)) != -1) {
+            byte[] parcial = cipher.update(buffer_leitura, 0, lidos);
+            if (parcial != null) {
+                Fout.write(parcial);
+            }
+        }
+        Fout.write(cipher.doFinal());
+        Fin.close();
+        Fout.close();
+    }
 
-        
-        byte[] salt = new byte[SALT_SIZE];
+    public void decript(File arquivo, String senha) throws Exception {
+        byte[] buffer_leitura = new byte[BUFFER];
+        byte[] saltos = new byte[TAMANHO_SALTOS];
+        FileInputStream Fin = new FileInputStream(arquivo);
+        FileOutputStream Fout = new FileOutputStream(new File(arquivo.getAbsolutePath().replaceAll(".cripto", "" )), true);
+        //1- restaura o vetor de inicialização do arquivo gravado nos primeiros 'TAMANHO_IV' dados do arquivo
+        byte[] IV = new byte[TAMANHO_IV];
+        int total = 0;
+        while (total < TAMANHO_IV) {
+            int r = Fin.read(IV, total, TAMANHO_IV - total);
+            if (r == -1) {
+                Fin.close();
+                Fout.close();
+                throw new IOException("Arquivo corrompido (IV incompleto)");
+            }
+            total += r;
+        }
+        //2- restaura os saltos gravados no arquivo
+        total = 0;
+        while (total < TAMANHO_SALTOS) {
+            int r = Fin.read(saltos, total, TAMANHO_SALTOS - total);
+            if (r == -1) {
+                Fin.close();
+                Fout.close();
+                throw new IOException("Arquivo corrompido (Saltos incompletos)");
+            }
+            total += r;
+        }
+        //3- gera a mesma SecretKey com base na palavra chave
+        SecretKey key = gerarKey(senha, saltos );
+        //4- cria o Cipher
+        Cipher cipher = getCipherConfigurado(IV, key, Cipher.DECRYPT_MODE);
+        //inicia o loop de decriptação, com uma pequena garantia de que o TAG não seja mal interpretado
+        int lidos;
+        while ((lidos = Fin.read(buffer_leitura)) != -1) {
+            byte[] parcial = cipher.update(buffer_leitura, 0, lidos);
+            if (parcial != null) {
+                Fout.write(parcial);
+            }
+        }
+        Fout.write(cipher.doFinal());
+        Fin.close();
+        Fout.close();
+    }
+
+    //__________METODOS PRIVADOS__________
+    
+    //gera uma chave mais forte com base na senha
+    private SecretKey gerarKey(String senha, byte[] saltos) throws Exception{
+        SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+        KeySpec spec = new PBEKeySpec(senha.toCharArray(), saltos, 65536, TAMANHO_CHAVES_GERADAS);
+        byte[] keyBytes = factory.generateSecret(spec).getEncoded();
+        return new SecretKeySpec(keyBytes, "AES");
+    }
+
+    //gera um vetor de inicialização aleatorio
+    private byte[] gerarIVAleatorio(){
         SecureRandom random = new SecureRandom();
-        random.nextBytes(salt);
-
-        SecretKey key = deriveKey(senha, salt);
-
-        
-        byte[] iv = new byte[IV_SIZE];
+        byte[] iv = new byte[TAMANHO_IV];
         random.nextBytes(iv);
+        return iv;
+    }
+    //gera saltos aleatorios
+    private byte[] gerarSaltos(){
+        SecureRandom random = new SecureRandom();
+        byte[] saltos = new byte[TAMANHO_SALTOS];
+        random.nextBytes(saltos);
+        return saltos;
+    }
 
+    private Cipher getCipherConfigurado(byte[] iv, SecretKey key, int cipherMode) throws Exception{
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        GCMParameterSpec spec = new GCMParameterSpec(128, iv);
-        cipher.init(Cipher.ENCRYPT_MODE, key, spec);
-
-        byte[] cipherText = cipher.doFinal(data);
-
-        byte[] result = new byte[salt.length + iv.length + cipherText.length];
-        System.arraycopy(salt, 0, result, 0, salt.length);
-        System.arraycopy(iv, 0, result, salt.length, iv.length);
-        System.arraycopy(cipherText, 0, result, salt.length + iv.length, cipherText.length);
-
-        return result;
+        GCMParameterSpec spec = new GCMParameterSpec(TAMANHO_TAG, iv);
+        cipher.init(cipherMode, key, spec);
+        return cipher;
     }
-
-    @Override
-    public byte[] decript(byte[] data, String senha) throws Exception {
-
-        byte[] salt = Arrays.copyOfRange(data, 0, SALT_SIZE);
-        byte[] iv = Arrays.copyOfRange(data, SALT_SIZE, SALT_SIZE + IV_SIZE);
-        byte[] cipherText = Arrays.copyOfRange(data, SALT_SIZE + IV_SIZE, data.length);
-
-        SecretKey key = deriveKey(senha, salt);
-
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        GCMParameterSpec spec = new GCMParameterSpec(128, iv);
-        cipher.init(Cipher.DECRYPT_MODE, key, spec);
-
-        return cipher.doFinal(cipherText);
-    }
-
-    private SecretKey deriveKey(String senha, byte[] salt) throws Exception {
-
-        PBEKeySpec spec = new PBEKeySpec(
-            senha.toCharArray(),
-            salt,
-            ITERATIONS,
-            KEY_SIZE
-        );
-
-        SecretKeyFactory factory =
-            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-
-        SecretKey tmp = factory.generateSecret(spec);
-        return new SecretKeySpec(tmp.getEncoded(), "AES");
-    }
+   
 }

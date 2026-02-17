@@ -1,36 +1,36 @@
 package com.geheimnis.metodosCriptografia;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.security.SecureRandom;
 import java.security.spec.KeySpec;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
+
+import com.geheimnis.auxiliares.Arquivista;
+import com.geheimnis.views.TelaProgresso;
 
 //salva num arquivo .cript ou descriptografa pra txt
 //1- IV
 //2- saltos
 //3- texto cifrado
-public class AESGCM{
+public class AESCTR{
 
     private static final int TAMANHO_CHAVES_GERADAS = 128;
-    private static final int TAMANHO_IV = 12;
+    private static final int TAMANHO_IV = 16; //para o CTR o IV = 16 é OBRIGATÓRIO
     private static final int TAMANHO_SALTOS = 16;
-    private static final int BUFFER = 1024 * 10; // 10 MB
-    private static final int TAMANHO_TAG = 128;
+    private static final int BUFFER = 1024 * 64; // 64 KB
+    private static final Arquivista arquivista = new Arquivista();
 
-    public void encrypt(File arquivo, String senha) throws Exception {
-        //declarações necessárias
-        byte[] buffer_leitura = new byte[BUFFER];
-        FileInputStream Fin = new FileInputStream(arquivo);
-        FileOutputStream Fout = new FileOutputStream(new File(arquivo.getAbsolutePath()+".cripto"), true);
+    public void encrypt(File arquivo, String senha, TelaProgresso tela) throws Exception {
+        //configuração da tela de carregamento
+        TelaProgresso progresso = new TelaProgresso(100);
+        arquivista.setFin(arquivo);
+        arquivista.setFout(new File(arquivo.getAbsolutePath()+".cripto"), true);
         //1- gera saltos aleatorios
         byte[] saltos = gerarSaltos();
         //2- gera uma senha mais forte com saltos aleatorios
@@ -40,65 +40,64 @@ public class AESGCM{
         //4- cria o Cipher
         Cipher cipher = getCipherConfigurado(IV, key, Cipher.ENCRYPT_MODE);
         //5- grava os dados do IV
-        Fout.write(IV);
+        arquivista.write(IV);
         //6- grava os dados dos saltos
-        Fout.write(saltos);
+        arquivista.write(saltos);
         //inicia o loop de encriptação
-        int lidos;
-        while ((lidos = Fin.read(buffer_leitura)) != -1) {
-            byte[] parcial = cipher.update(buffer_leitura, 0, lidos);
-            if (parcial != null) {
-                Fout.write(parcial);
-            }
+        byte[] buffer_leitura = new byte[BUFFER];
+        final long TAMANHO = arquivo.length();
+        long lidos;
+        long criptografados = 0;
+        progresso.show();
+        while ((lidos = arquivista.read(buffer_leitura)) != -1) {
+            arquivista.write(cipher.update(buffer_leitura));
+            criptografados += lidos;
+            progresso.setProgresso(Integer.parseInt(Long.toString(100 * criptografados / TAMANHO)));
         }
-        Fout.write(cipher.doFinal());
-        Fin.close();
-        Fout.close();
+        progresso.close();
+        arquivista.write(cipher.doFinal());
+        arquivista.close();
     }
 
-    public void decript(File arquivo, String senha) throws Exception {
-        byte[] buffer_leitura = new byte[BUFFER];
-        byte[] saltos = new byte[TAMANHO_SALTOS];
-        FileInputStream Fin = new FileInputStream(arquivo);
-        FileOutputStream Fout = new FileOutputStream(new File(arquivo.getAbsolutePath().replaceAll(".cripto", "" )), true);
+    public void decript(File arquivo, String senha, TelaProgresso progresso) throws Exception {
+        arquivista.setFin(arquivo);
+        arquivista.setFout(new File(arquivo.getAbsolutePath().replaceAll(".cripto", "")), true);
         //1- restaura o vetor de inicialização do arquivo gravado nos primeiros 'TAMANHO_IV' dados do arquivo
         byte[] IV = new byte[TAMANHO_IV];
-        int total = 0;
-        while (total < TAMANHO_IV) {
-            int r = Fin.read(IV, total, TAMANHO_IV - total);
-            if (r == -1) {
-                Fin.close();
-                Fout.close();
-                throw new IOException("Arquivo corrompido (IV incompleto)");
-            }
-            total += r;
-        }
+        arquivista.read(IV);
         //2- restaura os saltos gravados no arquivo
-        total = 0;
-        while (total < TAMANHO_SALTOS) {
-            int r = Fin.read(saltos, total, TAMANHO_SALTOS - total);
-            if (r == -1) {
-                Fin.close();
-                Fout.close();
-                throw new IOException("Arquivo corrompido (Saltos incompletos)");
-            }
-            total += r;
-        }
+        byte[] saltos = new byte[TAMANHO_SALTOS];
+        arquivista.read(saltos);
         //3- gera a mesma SecretKey com base na palavra chave
         SecretKey key = gerarKey(senha, saltos );
         //4- cria o Cipher
         Cipher cipher = getCipherConfigurado(IV, key, Cipher.DECRYPT_MODE);
         //inicia o loop de decriptação, com uma pequena garantia de que o TAG não seja mal interpretado
         int lidos;
-        while ((lidos = Fin.read(buffer_leitura)) != -1) {
+        final long TAMANHO = arquivo.length();
+        byte[] buffer_leitura = new byte[BUFFER];
+        long descriptografados = 0;
+        progresso.show();
+        while ((lidos = arquivista.read(buffer_leitura)) != -1) {
             byte[] parcial = cipher.update(buffer_leitura, 0, lidos);
-            if (parcial != null) {
-                Fout.write(parcial);
-            }
+            arquivista.write(parcial);
+            descriptografados += lidos;
+            progresso.setProgresso(Integer.parseInt(Long.toString(100 * descriptografados / TAMANHO)));
+            
         }
-        Fout.write(cipher.doFinal());
-        Fin.close();
-        Fout.close();
+        arquivista.write(cipher.doFinal());
+        arquivista.close();
+    }
+
+    public void metodoPosExcecao(){
+        try{
+            arquivista.close();
+        } catch (NullPointerException e){
+            // caso isso aconteça, significa que os fluxos foram fechados
+        } catch (Exception e){
+            // apenas para debug, o ideal é que esse caminho nunca aconteça
+            System.err.println("vazamento de memoria, fluxos abertos");
+        }
     }
 
     //__________METODOS PRIVADOS__________
@@ -125,12 +124,13 @@ public class AESGCM{
         random.nextBytes(saltos);
         return saltos;
     }
-
+    //gera um objeto do tipo cipher já criptografado
     private Cipher getCipherConfigurado(byte[] iv, SecretKey key, int cipherMode) throws Exception{
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        GCMParameterSpec spec = new GCMParameterSpec(TAMANHO_TAG, iv);
+        Cipher cipher = Cipher.getInstance("AES/CTR/NoPadding");
+        IvParameterSpec spec = new IvParameterSpec(iv);
         cipher.init(cipherMode, key, spec);
         return cipher;
     }
+
    
 }

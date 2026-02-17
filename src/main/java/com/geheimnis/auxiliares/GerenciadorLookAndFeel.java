@@ -1,4 +1,4 @@
-package com.geheimnis.configs;
+package com.geheimnis.auxiliares;
 
 import java.awt.Image;
 import java.awt.Toolkit;

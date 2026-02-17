@@ -2,7 +2,7 @@ package com.geheimnis;
 
 import java.net.URL;
 
-import com.geheimnis.configs.GerenciadorLookAndFeel;
+import com.geheimnis.auxiliares.GerenciadorLookAndFeel;
 import com.geheimnis.views.TelaPrincipal;
 
 public class Main {
@@ -12,6 +12,7 @@ public class Main {
     public static void main(String[] args) {
         GerenciadorLookAndFeel.definirLookAndFeel();
         GerenciadorLookAndFeel.definirIcone(tela.getJFrame(), icone);
+
         tela.show();
     }
 }

@@ -31,6 +31,7 @@ public class TelaPrincipal {
         TELA.setTitle(TITULO);
         TELA.setSize(new Dimension(W, H));
         construirInterface(TELA);
+        TELA.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         TELA.setVisible(true);
     }
 

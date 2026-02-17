@@ -1,0 +1,11 @@
+Aplicativo para encriptar e descriptografar arquivos importantes
+
+funcionalidades:
+
+1- criptografar um arquivo especifico do sistema atravez de uma
+chave informada durante o processo de criptografia, pode ser usado
+qualquer algoritmo de encriptação, porém o arquivo a ser criptografado
+e a chave de encriptação devem ser informados durante o processo de 
+encriptação
+
+2- descriptografar o conteudo de um arquivo, gerando outro com o conteudo descriptografado

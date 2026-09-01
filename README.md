@@ -2,7 +2,7 @@ uma aplicação para criptografar e descriptografar arquivos, com a segurança d
 
 1- é usado o algoritmo AES com saltos e um vetor de inicialização aleatórios
 
-2- a interface é intuitiva o bastante para que sejam despençadas explicações sobre uso
+2- a interface é intuitiva o bastante para que sejam dispensadas explicações sobre uso
 
 3- para usar basta ter uma ferramenta para executar o codigo (JRE) e uma para compilar ou empacotar (MAVEN)
    tendo isso basta abrir um terminal na pasta que contem o pom.xml e rodar o comando: mvn package, que irá gerar
